@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lease Dossier Tool | Gedeeld Dashboard</title>
+  <meta name="description" content="Moderne en deelbare webtool voor lease dossiers met Supabase-opslag, klantoverzicht en intakeformulier.">
+  <meta name="theme-color" content="#a85f35">
+  <meta property="og:title" content="Lease Dossier Tool">
+  <meta property="og:description" content="Gedeeld lease dashboard met intakeformulier en centraal dossieroverzicht.">
+  <meta property="og:type" content="website">
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <div class="page-shell">
+    <aside class="sidebar">
+      <div class="sidebar__top">
+        <p class="eyebrow">Vendor Lease / Grenke</p>
+        <h1>Lease Dossier Tool</h1>
+        <p class="sidebar__copy">Een nette, deelbare webtool voor intake, overzicht en centrale opslag van lease dossiers.</p>
+      </div>
+
+      <div class="sidebar__card">
+        <h2>Wat deze tool doet</h2>
+        <p>Nieuwe dossiers opslaan in Supabase, automatisch inladen bij openen en delen met meerdere gebruikers.</p>
+      </div>
+
+      <div class="sidebar__card">
+        <h2>Publiceren</h2>
+        <p>Geschikt voor hosting op GitHub Pages, Netlify of een andere statische webhost.</p>
+      </div>
+    </aside>
+
+    <main class="main-content">
+      <header class="hero">
+        <div>
+          <p class="eyebrow">Dashboard</p>
+          <h2>Intake en overzicht in één scherm</h2>
+          <p>Voeg snel nieuwe klanten toe, houd statussen bij en werk samen vanuit één gedeelde database.</p>
+        </div>
+
+        <div class="stats-grid" aria-label="Dashboard statistieken">
+          <article class="stat-card">
+            <span id="stat-total">0</span>
+            <small>Totaal dossiers</small>
+          </article>
+          <article class="stat-card">
+            <span id="stat-processing">0</span>
+            <small>In behandeling</small>
+          </article>
+          <article class="stat-card">
+            <span id="stat-ready">0</span>
+            <small>Klaar</small>
+          </article>
+        </div>
+      </header>
+
+      <section class="message-stack" aria-live="polite">
+        <div id="loading-state" class="message message--loading" hidden>Laden...</div>
+        <div id="success-state" class="message message--success" hidden></div>
+        <div id="error-state" class="message message--error" hidden></div>
+      </section>
+
+      <div class="content-grid">
+        <section class="panel" aria-labelledby="nieuw-dossier-title">
+          <div class="panel__header">
+            <div>
+              <p class="eyebrow">Formulier</p>
+              <h3 id="nieuw-dossier-title">Nieuw dossier</h3>
+            </div>
+          </div>
+
+          <form id="dossier-form" class="form-grid">
+            <div class="form-row">
+              <label>
+                Bedrijfsnaam
+                <input id="bedrijfsnaam" name="bedrijfsnaam" type="text" placeholder="Bijv. Janssen Techniek B.V." required>
+              </label>
+              <label>
+                KVK
+                <input id="kvk" name="kvk" type="text" placeholder="12345678" required>
+              </label>
+            </div>
+
+            <div class="form-row">
+              <label>
+                E-mail
+                <input id="email" name="email" type="email" placeholder="info@bedrijf.nl" required>
+              </label>
+              <label>
+                Looptijd (maanden)
+                <input id="looptijd" name="looptijd" type="number" min="1" placeholder="36" required>
+              </label>
+            </div>
+
+            <div class="form-row">
+              <label>
+                Investeringsbedrag
+                <input id="investeringsbedrag" name="investeringsbedrag" type="number" min="0" step="0.01" placeholder="15000" required>
+              </label>
+              <label>
+                Status
+                <select id="status" name="status">
+                  <option value="Aanvraag compleet">Aanvraag compleet</option>
+                  <option value="Kredietcheck voorbereiding">Kredietcheck voorbereiding</option>
+                  <option value="Stellingname ontvangen">Stellingname ontvangen</option>
+                  <option value="Contract fase">Contract fase</option>
+                  <option value="Documenten compleet">Documenten compleet</option>
+                  <option value="Contract gereed">Contract gereed</option>
+                </select>
+              </label>
+            </div>
+
+            <div class="config-note">
+              Vul in de JavaScript-configuratie onderaan dit bestand eerst je Supabase URL en anon key in.
+            </div>
+
+            <button id="submit-button" type="submit" class="button button--primary">Dossier opslaan</button>
+          </form>
+        </section>
+
+        <section class="panel" aria-labelledby="dossiers-title">
+          <div class="panel__header panel__header--stack">
+            <div>
+              <p class="eyebrow">Overzicht</p>
+              <h3 id="dossiers-title">Dossiers</h3>
+            </div>
+
+            <div id="filters" class="filter-group" role="group" aria-label="Filter dossiers">
+              <button class="button button--filter is-active" type="button" data-filter="all">Alle</button>
+              <button class="button button--filter" type="button" data-filter="in behandeling">In behandeling</button>
+              <button class="button button--filter" type="button" data-filter="wacht op klant">Wacht op klant</button>
+              <button class="button button--filter" type="button" data-filter="klaar">Klaar</button>
+            </div>
+          </div>
+
+          <div id="lijst" class="dossier-list" aria-live="polite"></div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script>
+    const SUPABASE_URL = "https://bqudrhmyoegrxuqtxhfq.supabase.co";
+    const SUPABASE_ANON_KEY = "sb_publishable_-LGxiPj6tk1j4uh3UKlVfw_7M99j4HZ";
+    const TABLE_NAME = "dossiers";
+    const STATUS_OPTIONS = [
+      "Aanvraag compleet",
+      "Kredietcheck voorbereiding",
+      "Stellingname ontvangen",
+      "Contract fase",
+      "Documenten compleet",
+      "Contract gereed",
+    ];
+
+    const form = document.getElementById("dossier-form");
+    const listElement = document.getElementById("lijst");
+    const filtersElement = document.getElementById("filters");
+    const submitButton = document.getElementById("submit-button");
+    const loadingState = document.getElementById("loading-state");
+    const successState = document.getElementById("success-state");
+    const errorState = document.getElementById("error-state");
+
+    const statTotal = document.getElementById("stat-total");
+    const statProcessing = document.getElementById("stat-processing");
+    const statReady = document.getElementById("stat-ready");
+
+    let activeFilter = "all";
+    let dossiers = [];
+    let supabaseClient = null;
+
+    init();
+
+    async function init() {
+      showLoading("Verbinden met Supabase...");
+
+      if (!window.supabase || !window.supabase.createClient) {
+        hideLoading();
+        showError("De Supabase client kon niet geladen worden. Controleer je internetverbinding of scriptbron.");
+        renderDossiers();
+        return;
+      }
+
+      supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+      bindEvents();
+      await loadDossiers();
+      subscribeToRealtime();
+    }
+
+    function bindEvents() {
+      form.addEventListener("submit", handleSubmit);
+
+      filtersElement.addEventListener("click", (event) => {
+        const button = event.target.closest("[data-filter]");
+        if (!button) return;
+
+        activeFilter = button.dataset.filter;
+        document.querySelectorAll(".button--filter").forEach((item) => item.classList.remove("is-active"));
+        button.classList.add("is-active");
+        renderDossiers();
+      });
+    }
+
+    async function handleSubmit(event) {
+      event.preventDefault();
+      clearMessages();
+      setSubmitting(true);
+
+      const payload = {
+        bedrijfsnaam: document.getElementById("bedrijfsnaam").value.trim(),
+        kvk: document.getElementById("kvk").value.trim(),
+        email: document.getElementById("email").value.trim(),
+        looptijd: Number(document.getElementById("looptijd").value),
+        investeringsbedrag: Number(document.getElementById("investeringsbedrag").value),
+        status: document.getElementById("status").value,
+      };
+
+      try {
+        const { error } = await supabaseClient.from(TABLE_NAME).insert([payload]);
+        if (error) throw error;
+
+        form.reset();
+        showSuccess("Dossier succesvol opgeslagen.");
+        await loadDossiers({ silent: true });
+      } catch (error) {
+        showError(`Opslaan mislukt: ${error.message}`);
+      } finally {
+        setSubmitting(false);
+      }
+    }
+
+    async function loadDossiers(options = {}) {
+      const { silent = false } = options;
+      if (!silent) showLoading("Dossiers laden...");
+
+      try {
+        const { data, error } = await supabaseClient
+          .from(TABLE_NAME)
+          .select("*")
+          .order("created_at", { ascending: false });
+
+        if (error) throw error;
+
+        dossiers = data || [];
+        renderDossiers();
+      } catch (error) {
+        showError(`Laden mislukt: ${error.message}`);
+      } finally {
+        hideLoading();
+      }
+    }
+
+    function renderDossiers() {
+      updateStats();
+      listElement.innerHTML = "";
+
+      const visibleDossiers = dossiers.filter((item) => {
+        if (activeFilter === "all") return true;
+        return dashboardStatus(item.status) === activeFilter;
+      });
+
+      if (visibleDossiers.length === 0) {
+        listElement.innerHTML = '<div class="empty-state">Nog geen dossiers gevonden voor deze filter.</div>';
+        return;
+      }
+
+      visibleDossiers.forEach((item) => {
+        const article = document.createElement("article");
+        article.className = "dossier-card";
+
+        const badgeValue = dashboardStatus(item.status);
+        article.innerHTML = `
+          <div class="dossier-card__top">
+            <div>
+              <h4>${escapeHtml(item.bedrijfsnaam || "")}</h4>
+              <p>${escapeHtml(item.email || "")}</p>
+            </div>
+            <span class="badge badge--${badgeValue.replaceAll(" ", "-")}">${capitalize(badgeValue)}</span>
+          </div>
+          <div class="dossier-card__meta">
+            <div><span>KVK</span><strong>${escapeHtml(item.kvk || "")}</strong></div>
+            <div><span>Looptijd</span><strong>${escapeHtml(String(item.looptijd || ""))} maanden</strong></div>
+            <div><span>Bedrag</span><strong>€ ${formatCurrency(item.investeringsbedrag || 0)}</strong></div>
+            <div><span>Aangemaakt</span><strong>${formatDate(item.created_at)}</strong></div>
+          </div>
+          <label class="status-control">
+            Status aanpassen
+            <select class="status-select" data-id="${item.id}">
+              ${STATUS_OPTIONS.map((status) => `
+                <option value="${escapeAttribute(status)}" ${status === item.status ? "selected" : ""}>
+                  ${escapeHtml(status)}
+                </option>
+              `).join("")}
+            </select>
+          </label>
+        `;
+
+        const select = article.querySelector(".status-select");
+        select.addEventListener("change", async (event) => {
+          await updateStatus(item.id, event.target.value, select);
+        });
+
+        listElement.appendChild(article);
+      });
+    }
+
+    async function updateStatus(id, status, selectElement) {
+      clearMessages();
+      selectElement.disabled = true;
+
+      try {
+        const { error } = await supabaseClient
+          .from(TABLE_NAME)
+          .update({ status })
+          .eq("id", id);
+
+        if (error) throw error;
+
+        dossiers = dossiers.map((item) => (
+          item.id === id ? { ...item, status } : item
+        ));
+        renderDossiers();
+        showSuccess("Status bijgewerkt.");
+      } catch (error) {
+        showError(`Status wijzigen mislukt: ${error.message}`);
+      } finally {
+        selectElement.disabled = false;
+      }
+    }
+
+    function subscribeToRealtime() {
+      if (!supabaseClient) return;
+
+      supabaseClient
+        .channel("dossiers-realtime")
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: TABLE_NAME },
+          async () => {
+            await loadDossiers({ silent: true });
+          }
+        )
+        .subscribe();
+    }
+
+    function updateStats() {
+      statTotal.textContent = dossiers.length;
+      statProcessing.textContent = dossiers.filter((item) => dashboardStatus(item.status) === "in behandeling").length;
+      statReady.textContent = dossiers.filter((item) => dashboardStatus(item.status) === "klaar").length;
+    }
+
+    function dashboardStatus(status) {
+      if (status === "Contract gereed") return "klaar";
+      if (status === "Aanvraag compleet") return "wacht op klant";
+      return "in behandeling";
+    }
+
+    function setSubmitting(isSubmitting) {
+      submitButton.disabled = isSubmitting;
+      submitButton.textContent = isSubmitting ? "Opslaan..." : "Dossier opslaan";
+    }
+
+    function showLoading(message) {
+      loadingState.textContent = message;
+      loadingState.hidden = false;
+    }
+
+    function hideLoading() {
+      loadingState.hidden = true;
+    }
+
+    function showSuccess(message) {
+      successState.textContent = message;
+      successState.hidden = false;
+      window.setTimeout(() => {
+        successState.hidden = true;
+      }, 2500);
+    }
+
+    function showError(message) {
+      errorState.textContent = message;
+      errorState.hidden = false;
+    }
+
+    function clearMessages() {
+      successState.hidden = true;
+      successState.textContent = "";
+      errorState.hidden = true;
+      errorState.textContent = "";
+    }
+
+    function formatCurrency(value) {
+      return new Intl.NumberFormat("nl-NL", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      }).format(Number(value) || 0);
+    }
+
+    function formatDate(value) {
+      if (!value) return "-";
+      return new Intl.DateTimeFormat("nl-NL", {
+        dateStyle: "medium",
+        timeStyle: "short",
+      }).format(new Date(value));
+    }
+
+    function capitalize(value) {
+      return value.charAt(0).toUpperCase() + value.slice(1);
+    }
+
+    function escapeHtml(value) {
+      return String(value)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#39;");
+    }
+
+    function escapeAttribute(value) {
+      return escapeHtml(value);
+    }
+  </script>
+</body>
+</html>
